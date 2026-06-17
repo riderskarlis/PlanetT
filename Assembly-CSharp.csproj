@@ -44,6 +44,10 @@
      <Compile Include="Assets\Scripts\AtmosphereTrigger.cs" />
      <Compile Include="Assets\Scripts\SunLightDriver.cs" />
      <Compile Include="Assets\Scripts\SunOrbit.cs" />
+     <Compile Include="Assets\Scripts\RenderSelection.cs" />
+     <Compile Include="Assets\Scripts\SpaceshipController.cs" />
+     <Compile Include="Assets\Scripts\MovementTargeting.cs" />
+     <Compile Include="Assets\Scripts\SelectionSystem.cs" />
      <None Include="Assets\Shader\LowPolyPlanet.shader" />
     <Reference Include="UnityEngine">
         <HintPath>C:\Program Files\Unity 2020.3.49f1\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>
