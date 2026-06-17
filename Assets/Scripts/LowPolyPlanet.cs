@@ -2,8 +2,14 @@ using UnityEngine;
 
 [ExecuteAlways]
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
-public class LowPolyPlanet : MonoBehaviour
+public class LowPolyPlanet : MonoBehaviour, ISelectable
 {
+    public string planetName = "Unknown Planet";
+    [TextArea] public string planetDescription = "A mysterious celestial body.";
+
+    public string Name => planetName;
+    public string Description => planetDescription;
+
     public float radius = 50f;
     public int subdivisions = 3;
 
@@ -300,5 +306,42 @@ public class LowPolyPlanet : MonoBehaviour
     {
         // return GetTerrainAtPoint(worldPoint) == TerrainType.Water;
         return false;
+    }
+
+    private int targetingCount = 0;
+    private RenderSelection selectionIndicator;
+
+    public void SetSelected(bool value)
+    {
+        EnsureSelectionIndicator();
+        selectionIndicator.SetSelected(value);
+    }
+
+    private void EnsureSelectionIndicator()
+    {
+        if (selectionIndicator == null)
+        {
+            selectionIndicator = GetComponent<RenderSelection>();
+            if (selectionIndicator == null)
+            {
+                selectionIndicator = gameObject.AddComponent<RenderSelection>();
+            }
+        }
+    }
+
+    public void SetTargeted(bool value)
+    {
+        EnsureSelectionIndicator();
+
+        targetingCount += value ? 1 : -1;
+        targetingCount = Mathf.Max(0, targetingCount);
+        
+        // If not explicitly selected, targeting enables the line but uses a different color logic
+        // Actually RenderSelection's SetSelected handles line enablement.
+        // We'll just let them overlap for now.
+        if (!selectionIndicator.enabled && targetingCount > 0)
+        {
+            selectionIndicator.SetSelected(true);
+        }
     }
 }

@@ -33,10 +33,16 @@ public class OrbitalCameraController : MonoBehaviour
         }
     }
 
-    void Update()
+    void LateUpdate()
     {
         if (target == null)
             return;
+
+        // Parent to target's parent (the planet) for perfect sync
+        if (transform.parent != target.parent)
+        {
+            transform.SetParent(target.parent);
+        }
 
         Quaternion rotationDelta = target.rotation * Quaternion.Inverse(lastPlanetRotation);
         orbitDirection = rotationDelta * orbitDirection;
@@ -77,11 +83,13 @@ public class OrbitalCameraController : MonoBehaviour
         distance -= Input.mouseScrollDelta.y * zoomSpeed;
         distance = Mathf.Max(minDistance, distance);
 
+        // Calculate position relative to parent
         transform.position = target.position + orbitDirection * distance;
         transform.LookAt(target.position);
 
         if (distance > atmosphereRadius)
         {
+            transform.SetParent(null); // Detach when leaving orbit
             enabled = false;
 
             if (simpleCameraController != null)

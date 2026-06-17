@@ -5,6 +5,7 @@ TagManager:
   serializedVersion: 2
   tags:
   - Atmosphere
+  - Planet
   layers:
   - Default
   - TransparentFX
