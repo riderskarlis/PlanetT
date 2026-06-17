@@ -194,20 +194,39 @@ public class LowPolyPlanet : MonoBehaviour
 
             TerrainType type;
             Color color;
+
+            float grassBias = 0.0f;
+            float waterBias = 0.0f;
+            float sandBias = 0.0f;
+
+            if ((i > 0) && terrainTypes[i-1] == TerrainType.Grass)
+            {
+                grassBias = 0.05f;
+            }
+
+            if ((i > 0) && terrainTypes[i-1] == TerrainType.Water)
+            {
+                waterBias = 0.02f;
+            }
+
+            if ((i > 0) && terrainTypes[i-1] == TerrainType.Sand)
+            {
+                sandBias = 0.1f;
+            }
             
-            if (normalizedHeight < oceanThreshold || (riverMask > 0f && normalizedHeight < grassThreshold - 0.02f))
+            if (normalizedHeight + grassBias - waterBias < oceanThreshold || (riverMask > 0f && normalizedHeight < grassThreshold - 0.02f))
             {
                 type = TerrainType.Water;
                 color = Color.Lerp(waterColor, new Color(0.15f, 0.45f, 0.75f), humidity);
                 color = Color.Lerp(color, new Color(0.1f, 0.55f, 0.8f), temperature * 0.15f);
             }
-            else if (normalizedHeight < sandThreshold || (erosion > 0.78f && slope < 0.22f))
+            else if (normalizedHeight + grassBias < sandThreshold || (erosion > 0.78f && slope < 0.22f))
             {
                 type = TerrainType.Sand;
                 color = Color.Lerp(sandColor, rockColor, 0.2f + humidity * 0.1f + erosion * 0.15f);
                 color = Color.Lerp(color, new Color(0.9f, 0.8f, 0.55f), temperature * 0.2f);
             }
-            else if (normalizedHeight < grassThreshold || (biomeNoise > 0.58f && normalizedHeight < grassThreshold + 0.08f))
+            else if (normalizedHeight < grassThreshold + grassBias || (biomeNoise > 0.58f && normalizedHeight < grassThreshold + 0.08f))
             {
                 type = TerrainType.Grass;
                 color = Color.Lerp(grassColor, new Color(0.15f, 0.5f, 0.2f), humidity);
