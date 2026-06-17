@@ -255,45 +255,31 @@ public class LowPolyPlanet : MonoBehaviour
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
         if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
         {
-            TerrainType terrain = GetTerrainAtPoint(hit.point);
-            bool canBuild = CanBuildAt(hit.point);
+            // TerrainType terrain = GetTerrainAtPoint(hit.point);
+            // bool canBuild = CanBuildAt(hit.point);
 
-            Debug.Log(
-                $"[LowPolyPlanet] Clicked at {hit.point}\n" +
-                $"  Terrain: {terrain}\n" +
-                $"  CanBuild: {canBuild}"
-            );
-        }
-    }
-    
-    public TerrainType GetTerrainAtPoint(Vector3 worldPoint)
-    {
-        Vector3 localPoint = transform.InverseTransformPoint(worldPoint);
-
-        int closest = 0;
-        float minDist = float.MaxValue;
-        
-        for (int i = 0; i < vertices.Length; i++)
-        {
-            float d = Vector3.Distance(localPoint.normalized * radius, vertices[i]);
-            if (d < minDist)
+            // Debug.Log(
+            //     $"[LowPolyPlanet] Clicked at {hit.point}\n" +
+            //     $"  Terrain: {terrain}\n" +
+            //     $"  CanBuild: {canBuild}"
+            // );
+            if (triangles.Length > 0 && hit.triangleIndex >= 0 && hit.triangleIndex < triangles.Length / 3)
             {
-                minDist = d;
-                closest = i;
+                Debug.Log($"  Triangle Index: {terrainTypes[triangles[hit.triangleIndex * 3]] }");
             }
         }
-        
-        return terrainTypes[closest];
     }
     
     public bool CanBuildAt(Vector3 worldPoint)
     {
-        TerrainType type = GetTerrainAtPoint(worldPoint);
-        return type == TerrainType.Grass || type == TerrainType.Sand || type == TerrainType.Rock;
+        // TerrainType type = GetTerrainAtPoint(worldPoint);
+        // return type == TerrainType.Grass || type == TerrainType.Sand || type == TerrainType.Rock;
+        return true;
     }
     
     public bool IsWater(Vector3 worldPoint)
     {
-        return GetTerrainAtPoint(worldPoint) == TerrainType.Water;
+        // return GetTerrainAtPoint(worldPoint) == TerrainType.Water;
+        return false;
     }
 }
