@@ -45,10 +45,19 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
     
     public enum TerrainType { Water, Sand, Grass, Rock, Snow }
     
+#if UNITY_EDITOR
     void OnValidate()
     {
+        UnityEditor.EditorApplication.delayCall -= DelayGenerate;
+        UnityEditor.EditorApplication.delayCall += DelayGenerate;
+    }
+
+    private void DelayGenerate()
+    {
+        if (this == null) return;
         GeneratePlanet();
     }
+#endif
 
     void Start()
     {
@@ -274,7 +283,11 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
         if (!Input.GetMouseButtonDown(0))
             return;
 
-        OrbitalCameraController orbital = Camera.main.transform.parent.GetComponent<OrbitalCameraController>();
+        if (Camera.main == null) return;
+        Transform parentTransform = Camera.main.transform.parent;
+        if (parentTransform == null) return;
+
+        OrbitalCameraController orbital = parentTransform.GetComponent<OrbitalCameraController>();
         if (orbital == null || !orbital.enabled) return;
 
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);

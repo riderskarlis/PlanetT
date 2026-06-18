@@ -6,6 +6,12 @@ public class MainMenuScript : MonoBehaviour
     public float skyBoxRotationSpeed = 0.25f;
     public string mainGameScene = "Main";
 
+    void Start()
+    {
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
     void Update()
     {
         if (RenderSettings.skybox != null)
@@ -21,7 +27,10 @@ public class MainMenuScript : MonoBehaviour
 
     public void OpenSettings()
     {
-        
+        if (SettingsManager.Instance != null)
+        {
+            SettingsManager.Instance.OpenSettings();
+        }
     }
 
     public void QuitGame()
