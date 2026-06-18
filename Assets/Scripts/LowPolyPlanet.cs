@@ -50,24 +50,33 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
     [Tooltip("The width of the soft transition at the edge of the shadow")]
     public float eclipsePenumbra = 6f;
 
-    private static LowPolyPlanet[] allPlanetsCache;
-    private static float lastCacheTime = -1f;
+    private static System.Collections.Generic.List<LowPolyPlanet> activePlanets = new System.Collections.Generic.List<LowPolyPlanet>();
+    private static Transform cachedSun;
+    private static Vector4[] shaderCasters = new Vector4[32];
+    
+    private MaterialPropertyBlock propertyBlock;
+    private bool dirty;
+
+    void OnEnable()
+    {
+        if (!activePlanets.Contains(this))
+        {
+            activePlanets.Add(this);
+        }
+    }
+
+    void OnDisable()
+    {
+        activePlanets.Remove(this);
+    }
     
     public enum TerrainType { Water, Sand, Grass, Rock, Snow }
     
-#if UNITY_EDITOR
     void OnValidate()
     {
-        UnityEditor.EditorApplication.delayCall -= DelayGenerate;
-        UnityEditor.EditorApplication.delayCall += DelayGenerate;
+        dirty = true;
+        UpdateMaterialProperties();
     }
-
-    private void DelayGenerate()
-    {
-        if (this == null) return;
-        GeneratePlanet();
-    }
-#endif
 
     void Start()
     {
@@ -290,119 +299,78 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
         mesh.RecalculateBounds();
     }
 
-    private LowPolyPlanet[] GetAllPlanets()
+    private static Transform GetSun()
     {
-        if (Time.time - lastCacheTime > 1.5f || allPlanetsCache == null)
+        if (cachedSun == null)
         {
-            allPlanetsCache = FindObjectsOfType<LowPolyPlanet>();
-            lastCacheTime = Time.time;
+            GameObject sunGo = GameObject.Find("Sun");
+            if (sunGo != null)
+            {
+                cachedSun = sunGo.transform;
+            }
         }
-        return allPlanetsCache;
+        return cachedSun;
     }
 
-    void UpdateEclipseShadows()
+    private static void UpdateGlobalEclipseShaderVariables()
     {
-        if (!enableEclipseShadows || originalColors == null || originalColors.Length != vertices.Length)
-            return;
+        Transform sun = GetSun();
+        Vector3 sunPos = sun != null ? sun.position : Vector3.zero;
+        Shader.SetGlobalVector("_EclipseSunPosition", new Vector4(sunPos.x, sunPos.y, sunPos.z, 1f));
 
-        LowPolyPlanet[] planets = GetAllPlanets();
-        Vector3 sunLocal = transform.InverseTransformPoint(Vector3.zero);
-        
-        bool colorsModified = false;
-
-        // Cache local positions of other planets for optimization
-        int otherPlanetCount = 0;
-        foreach (var p in planets)
+        int casterCount = 0;
+        for (int i = activePlanets.Count - 1; i >= 0; i--)
         {
-            if (p != null && p != this) otherPlanetCount++;
-        }
-
-        if (otherPlanetCount == 0)
-        {
-            for (int i = 0; i < vertices.Length; i++)
+            var p = activePlanets[i];
+            if (p == null)
             {
-                if (colors[i] != originalColors[i])
-                {
-                    colors[i] = originalColors[i];
-                    colorsModified = true;
-                }
+                activePlanets.RemoveAt(i);
+                continue;
             }
-            if (colorsModified) mesh.colors = colors;
-            return;
-        }
-
-        Vector3[] planetCentersLocal = new Vector3[otherPlanetCount];
-        float[] planetRadiiLocal = new float[otherPlanetCount];
-        int index = 0;
-        foreach (LowPolyPlanet planet in planets)
-        {
-            if (planet == null || planet == this) continue;
-
-            planetCentersLocal[index] = transform.InverseTransformPoint(planet.transform.position);
-            planetRadiiLocal[index] = planet.radius;
-            index++;
-        }
-
-        for (int i = 0; i < vertices.Length; i++)
-        {
-            Vector3 vLocal = vertices[i];
-            Vector3 toVertex = vLocal - sunLocal;
-            float distToVertex = toVertex.magnitude;
-            Vector3 dir = toVertex / distToVertex;
-
-            float maxShadowFactor = 0f;
-
-            for (int j = 0; j < otherPlanetCount; j++)
+            if (p.enableEclipseShadows && p.gameObject.activeInHierarchy)
             {
-                Vector3 pCenter = planetCentersLocal[j];
-                float pRadius = planetRadiiLocal[j];
-
-                // Projection of planet center onto local ray to vertex
-                float t = Vector3.Dot(pCenter - sunLocal, dir);
-
-                if (t > 0f && t < distToVertex)
-                {
-                    Vector3 closestPoint = sunLocal + dir * t;
-                    float dist = Vector3.Distance(pCenter, closestPoint);
-
-                    float rMin = pRadius;
-                    float rMax = pRadius + eclipsePenumbra;
-
-                    if (dist < rMin)
-                    {
-                        maxShadowFactor = 1f; // Full shadow (umbra)
-                        break;
-                    }
-                    else if (dist < rMax && eclipsePenumbra > 0.001f)
-                    {
-                        // Soft shadow blending (penumbra)
-                        float shadowFactor = 1f - ((dist - rMin) / eclipsePenumbra);
-                        if (shadowFactor > maxShadowFactor)
-                        {
-                            maxShadowFactor = shadowFactor;
-                        }
-                    }
-                }
-            }
-
-            Color targetColor = Color.Lerp(originalColors[i], originalColors[i] * shadowDarkness, maxShadowFactor);
-            
-            if (colors[i] != targetColor)
-            {
-                colors[i] = targetColor;
-                colorsModified = true;
+                shaderCasters[casterCount] = new Vector4(p.transform.position.x, p.transform.position.y, p.transform.position.z, p.radius);
+                casterCount++;
+                if (casterCount >= 32) break;
             }
         }
 
-        if (colorsModified)
+        Shader.SetGlobalVectorArray("_EclipseShadowCasters", shaderCasters);
+        Shader.SetGlobalInt("_EclipseShadowCasterCount", casterCount);
+    }
+
+    private void UpdateMaterialProperties()
+    {
+        if (propertyBlock == null)
+            propertyBlock = new MaterialPropertyBlock();
+
+        Renderer rend = GetComponent<Renderer>();
+        if (rend != null)
         {
-            mesh.colors = colors;
+            rend.GetPropertyBlock(propertyBlock);
+            propertyBlock.SetFloat("_ShadowDarkness", shadowDarkness);
+            propertyBlock.SetFloat("_EclipsePenumbra", eclipsePenumbra);
+            propertyBlock.SetFloat("_EnableEclipseShadows", enableEclipseShadows ? 1f : 0f);
+            rend.SetPropertyBlock(propertyBlock);
         }
     }
 
     void Update()
     {
-        UpdateEclipseShadows();
+        #if UNITY_EDITOR
+            if (!Application.isPlaying && dirty)
+            {
+                GeneratePlanet();
+                dirty = false;
+            }
+        #endif
+
+        if (activePlanets.Count > 0 && activePlanets[0] == this)
+        {
+            UpdateGlobalEclipseShaderVariables();
+        }
+
+        UpdateMaterialProperties();
 
         if (!Input.GetMouseButtonDown(0))
             return;

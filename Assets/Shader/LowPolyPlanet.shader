@@ -14,6 +14,11 @@ Shader "Custom/LowPolyPlanet"
         [Toggle] _UseEmissionOnly ("Use Emission Only", Float) = 0
         _EmissionColor ("Emission Color", Color) = (1,1,1,1)
         _EmissionStrength ("Emission Strength", Range(0,10)) = 1
+
+        [Header(Eclipse Shadows)]
+        [Toggle] _EnableEclipseShadows ("Enable Eclipse Shadows", Float) = 1
+        _ShadowDarkness ("Shadow Darkness", Range(0,1)) = 0.25
+        _EclipsePenumbra ("Eclipse Penumbra", Float) = 6.0
     }
 
     SubShader
@@ -47,6 +52,16 @@ Shader "Custom/LowPolyPlanet"
             sampler2D _MainTex;
             float4    _MainTex_ST;
 
+            // Eclipse variables
+            float _EnableEclipseShadows;
+            float _ShadowDarkness;
+            float _EclipsePenumbra;
+
+            // Global variables for eclipse shadows (set via script)
+            uniform float4 _EclipseShadowCasters[32];
+            uniform int _EclipseShadowCasterCount;
+            uniform float4 _EclipseSunPosition;
+
             // --------------------------------------------------
             // Structs
             // --------------------------------------------------
@@ -76,8 +91,73 @@ Shader "Custom/LowPolyPlanet"
                 v2f o;
                 o.vertex      = UnityObjectToClipPos(v.vertex);
                 o.uv          = TRANSFORM_TEX(v.uv, _MainTex);
-                o.color       = v.color;
                 o.worldNormal = UnityObjectToWorldNormal(v.normal);
+
+                // Start with original vertex color
+                float4 vertexColor = v.color;
+
+                if (_EnableEclipseShadows > 0.5)
+                {
+                    float3 vertexWorldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                    float3 sunPos = _EclipseSunPosition.xyz;
+                    float3 toVertex = vertexWorldPos - sunPos;
+                    float toVertexSqrMag = dot(toVertex, toVertex);
+                    
+                    float maxShadowFactor = 0.0;
+                    float3 targetCenter = mul(unity_ObjectToWorld, float4(0,0,0,1)).xyz;
+                    
+                    for (int j = 0; j < _EclipseShadowCasterCount; j++)
+                    {
+                        float4 caster = _EclipseShadowCasters[j]; // xyz = pos, w = radius
+                        float3 pCenter = caster.xyz;
+                        
+                        // Self-exclusion check: don't let a planet cast an eclipse shadow on itself
+                        float3 diff = pCenter - targetCenter;
+                        if (dot(diff, diff) < 1.0) continue;
+
+                        float pRadius = caster.w;
+                        
+                        // Vector from sun to shadow caster center
+                        float3 toCaster = pCenter - sunPos;
+                        
+                        // Projection parameter of caster center onto the ray from sun to vertex
+                        float u = dot(toCaster, toVertex) / (toVertexSqrMag + 0.0001);
+                        
+                        // We check if the caster is between the sun and the vertex
+                        if (u > 0.0 && u < 1.0)
+                        {
+                            float3 closestPoint = sunPos + toVertex * u;
+                            float3 offset = pCenter - closestPoint;
+                            float distSq = dot(offset, offset);
+                            
+                            float rMinSq = pRadius * pRadius;
+                            
+                            if (distSq < rMinSq)
+                            {
+                                maxShadowFactor = 1.0;
+                            }
+                            else if (_EclipsePenumbra > 0.001)
+                            {
+                                float rMax = pRadius + _EclipsePenumbra;
+                                float rMaxSq = rMax * rMax;
+                                if (distSq < rMaxSq)
+                                {
+                                    float dist = sqrt(distSq);
+                                    float shadowFactor = 1.0 - ((dist - pRadius) / _EclipsePenumbra);
+                                    if (shadowFactor > maxShadowFactor)
+                                    {
+                                        maxShadowFactor = shadowFactor;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    float shadowMultiplier = 1.0 - maxShadowFactor * (1.0 - _ShadowDarkness);
+                    vertexColor.rgb *= shadowMultiplier;
+                }
+
+                o.color = vertexColor;
                 return o;
             }
 

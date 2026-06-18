@@ -59,10 +59,22 @@ public class PlanetOrbit : MonoBehaviour
 
     private void DrawOrbitLine()
     {
-        lineRenderer = GetComponent<LineRenderer>();
+        Transform child = transform.Find("OrbitLine");
+        GameObject lineObj;
+        if (child != null)
+        {
+            lineObj = child.gameObject;
+        }
+        else
+        {
+            lineObj = new GameObject("OrbitLine");
+            lineObj.transform.SetParent(transform, false);
+        }
+
+        lineRenderer = lineObj.GetComponent<LineRenderer>();
         if (lineRenderer == null)
         {
-            lineRenderer = gameObject.AddComponent<LineRenderer>();
+            lineRenderer = lineObj.AddComponent<LineRenderer>();
         }
 
         lineRenderer.useWorldSpace = true;
