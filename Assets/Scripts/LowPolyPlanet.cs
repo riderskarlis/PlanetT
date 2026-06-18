@@ -41,7 +41,17 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
     private Vector3[] vertices;
     private int[] triangles;
     private Color[] colors;
+    private Color[] originalColors;
     private TerrainType[] terrainTypes;
+
+    [Header("Eclipse Shadows")]
+    public bool enableEclipseShadows = true;
+    [Range(0f, 1f)] public float shadowDarkness = 0.25f;
+    [Tooltip("The width of the soft transition at the edge of the shadow")]
+    public float eclipsePenumbra = 6f;
+
+    private static LowPolyPlanet[] allPlanetsCache;
+    private static float lastCacheTime = -1f;
     
     public enum TerrainType { Water, Sand, Grass, Rock, Snow }
     
@@ -180,6 +190,7 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
     void ApplyNoiseAndColor()
     {
         colors = new Color[vertices.Length];
+        originalColors = new Color[vertices.Length];
         terrainTypes = new TerrainType[vertices.Length];
         
         for (int i = 0; i < vertices.Length; i++)
@@ -265,6 +276,7 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
             
             terrainTypes[i] = type;
             colors[i] = color;
+            originalColors[i] = color;
         }
     }
     
@@ -278,8 +290,120 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
         mesh.RecalculateBounds();
     }
 
+    private LowPolyPlanet[] GetAllPlanets()
+    {
+        if (Time.time - lastCacheTime > 1.5f || allPlanetsCache == null)
+        {
+            allPlanetsCache = FindObjectsOfType<LowPolyPlanet>();
+            lastCacheTime = Time.time;
+        }
+        return allPlanetsCache;
+    }
+
+    void UpdateEclipseShadows()
+    {
+        if (!enableEclipseShadows || originalColors == null || originalColors.Length != vertices.Length)
+            return;
+
+        LowPolyPlanet[] planets = GetAllPlanets();
+        Vector3 sunLocal = transform.InverseTransformPoint(Vector3.zero);
+        
+        bool colorsModified = false;
+
+        // Cache local positions of other planets for optimization
+        int otherPlanetCount = 0;
+        foreach (var p in planets)
+        {
+            if (p != null && p != this) otherPlanetCount++;
+        }
+
+        if (otherPlanetCount == 0)
+        {
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                if (colors[i] != originalColors[i])
+                {
+                    colors[i] = originalColors[i];
+                    colorsModified = true;
+                }
+            }
+            if (colorsModified) mesh.colors = colors;
+            return;
+        }
+
+        Vector3[] planetCentersLocal = new Vector3[otherPlanetCount];
+        float[] planetRadiiLocal = new float[otherPlanetCount];
+        int index = 0;
+        foreach (LowPolyPlanet planet in planets)
+        {
+            if (planet == null || planet == this) continue;
+
+            planetCentersLocal[index] = transform.InverseTransformPoint(planet.transform.position);
+            planetRadiiLocal[index] = planet.radius;
+            index++;
+        }
+
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 vLocal = vertices[i];
+            Vector3 toVertex = vLocal - sunLocal;
+            float distToVertex = toVertex.magnitude;
+            Vector3 dir = toVertex / distToVertex;
+
+            float maxShadowFactor = 0f;
+
+            for (int j = 0; j < otherPlanetCount; j++)
+            {
+                Vector3 pCenter = planetCentersLocal[j];
+                float pRadius = planetRadiiLocal[j];
+
+                // Projection of planet center onto local ray to vertex
+                float t = Vector3.Dot(pCenter - sunLocal, dir);
+
+                if (t > 0f && t < distToVertex)
+                {
+                    Vector3 closestPoint = sunLocal + dir * t;
+                    float dist = Vector3.Distance(pCenter, closestPoint);
+
+                    float rMin = pRadius;
+                    float rMax = pRadius + eclipsePenumbra;
+
+                    if (dist < rMin)
+                    {
+                        maxShadowFactor = 1f; // Full shadow (umbra)
+                        break;
+                    }
+                    else if (dist < rMax && eclipsePenumbra > 0.001f)
+                    {
+                        // Soft shadow blending (penumbra)
+                        float shadowFactor = 1f - ((dist - rMin) / eclipsePenumbra);
+                        if (shadowFactor > maxShadowFactor)
+                        {
+                            maxShadowFactor = shadowFactor;
+                        }
+                    }
+                }
+            }
+
+            Color targetColor = Color.Lerp(originalColors[i], originalColors[i] * shadowDarkness, maxShadowFactor);
+            
+            if (colors[i] != targetColor)
+            {
+                colors[i] = targetColor;
+                colorsModified = true;
+            }
+        }
+
+        if (colorsModified)
+        {
+            mesh.colors = colors;
+        }
+    }
+
     void Update()
     {
+        UpdateEclipseShadows();
+
         if (!Input.GetMouseButtonDown(0))
             return;
 
