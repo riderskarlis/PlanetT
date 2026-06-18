@@ -20,6 +20,11 @@ public class SimpleCameraController : MonoBehaviour
     {
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+
+        if (PlayerPrefs.HasKey("MouseSensitivity"))
+        {
+            mouseSensitivity = PlayerPrefs.GetFloat("MouseSensitivity");
+        }
     }
 
     void Update()
@@ -28,6 +33,7 @@ public class SimpleCameraController : MonoBehaviour
 
         if (ctrl)
         {
+            // Show cursor when holding Ctrl (for selection/lasso)
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
 
@@ -58,8 +64,12 @@ public class SimpleCameraController : MonoBehaviour
 
             if (!BlockLook)
             {
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
+                // Lock cursor for camera look
+                if (Time.timeScale > 0) // Only lock if not paused
+                {
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
+                }
 
                 float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
                 float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * (invertY ? 1 : -1);
@@ -97,7 +107,7 @@ public class SimpleCameraController : MonoBehaviour
 
     void OnApplicationFocus(bool hasFocus)
     {
-        if (hasFocus && enabled && !IsCtrlHeld && !BlockLook)
+        if (hasFocus && enabled && !IsCtrlHeld && !BlockLook && Time.timeScale > 0)
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;

@@ -1,17 +1,44 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class MainMenuScript : MonoBehaviour
 {
     public float skyBoxRotationSpeed = 0.25f;
+    public string mainGameScene = "Main";
+
     void Start()
     {
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 
-    // Update is called once per frame
     void Update()
     {
-        RenderSettings.skybox.SetFloat("_Rotation", Time.time * skyBoxRotationSpeed);
+        if (RenderSettings.skybox != null)
+        {
+            RenderSettings.skybox.SetFloat("_Rotation", Time.time * skyBoxRotationSpeed);
+        }
+    }
+
+    public void PlayGame()
+    {
+        SceneManager.LoadScene(mainGameScene);
+    }
+
+    public void OpenSettings()
+    {
+        if (SettingsManager.Instance != null)
+        {
+            SettingsManager.Instance.OpenSettings();
+        }
+    }
+
+    public void QuitGame()
+    {
+        #if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+        #else
+            Application.Quit();
+        #endif
     }
 }

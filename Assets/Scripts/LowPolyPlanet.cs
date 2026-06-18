@@ -2,8 +2,14 @@ using UnityEngine;
 
 [ExecuteAlways]
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
-public class LowPolyPlanet : MonoBehaviour
+public class LowPolyPlanet : MonoBehaviour, ISelectable
 {
+    public string planetName = "Unknown Planet";
+    [TextArea] public string planetDescription = "A mysterious celestial body.";
+
+    public string Name => planetName;
+    public string Description => planetDescription;
+
     public float radius = 50f;
     public int subdivisions = 3;
 
@@ -35,14 +41,33 @@ public class LowPolyPlanet : MonoBehaviour
     private Vector3[] vertices;
     private int[] triangles;
     private Color[] colors;
+    private Color[] originalColors;
     private TerrainType[] terrainTypes;
+
+    [Header("Eclipse Shadows")]
+    public bool enableEclipseShadows = true;
+    [Range(0f, 1f)] public float shadowDarkness = 0.25f;
+    [Tooltip("The width of the soft transition at the edge of the shadow")]
+    public float eclipsePenumbra = 6f;
+
+    private static LowPolyPlanet[] allPlanetsCache;
+    private static float lastCacheTime = -1f;
     
     public enum TerrainType { Water, Sand, Grass, Rock, Snow }
     
+#if UNITY_EDITOR
     void OnValidate()
     {
+        UnityEditor.EditorApplication.delayCall -= DelayGenerate;
+        UnityEditor.EditorApplication.delayCall += DelayGenerate;
+    }
+
+    private void DelayGenerate()
+    {
+        if (this == null) return;
         GeneratePlanet();
     }
+#endif
 
     void Start()
     {
@@ -165,6 +190,7 @@ public class LowPolyPlanet : MonoBehaviour
     void ApplyNoiseAndColor()
     {
         colors = new Color[vertices.Length];
+        originalColors = new Color[vertices.Length];
         terrainTypes = new TerrainType[vertices.Length];
         
         for (int i = 0; i < vertices.Length; i++)
@@ -250,6 +276,7 @@ public class LowPolyPlanet : MonoBehaviour
             
             terrainTypes[i] = type;
             colors[i] = color;
+            originalColors[i] = color;
         }
     }
     
@@ -263,12 +290,128 @@ public class LowPolyPlanet : MonoBehaviour
         mesh.RecalculateBounds();
     }
 
+    private LowPolyPlanet[] GetAllPlanets()
+    {
+        if (Time.time - lastCacheTime > 1.5f || allPlanetsCache == null)
+        {
+            allPlanetsCache = FindObjectsOfType<LowPolyPlanet>();
+            lastCacheTime = Time.time;
+        }
+        return allPlanetsCache;
+    }
+
+    void UpdateEclipseShadows()
+    {
+        if (!enableEclipseShadows || originalColors == null || originalColors.Length != vertices.Length)
+            return;
+
+        LowPolyPlanet[] planets = GetAllPlanets();
+        Vector3 sunLocal = transform.InverseTransformPoint(Vector3.zero);
+        
+        bool colorsModified = false;
+
+        // Cache local positions of other planets for optimization
+        int otherPlanetCount = 0;
+        foreach (var p in planets)
+        {
+            if (p != null && p != this) otherPlanetCount++;
+        }
+
+        if (otherPlanetCount == 0)
+        {
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                if (colors[i] != originalColors[i])
+                {
+                    colors[i] = originalColors[i];
+                    colorsModified = true;
+                }
+            }
+            if (colorsModified) mesh.colors = colors;
+            return;
+        }
+
+        Vector3[] planetCentersLocal = new Vector3[otherPlanetCount];
+        float[] planetRadiiLocal = new float[otherPlanetCount];
+        int index = 0;
+        foreach (LowPolyPlanet planet in planets)
+        {
+            if (planet == null || planet == this) continue;
+
+            planetCentersLocal[index] = transform.InverseTransformPoint(planet.transform.position);
+            planetRadiiLocal[index] = planet.radius;
+            index++;
+        }
+
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 vLocal = vertices[i];
+            Vector3 toVertex = vLocal - sunLocal;
+            float distToVertex = toVertex.magnitude;
+            Vector3 dir = toVertex / distToVertex;
+
+            float maxShadowFactor = 0f;
+
+            for (int j = 0; j < otherPlanetCount; j++)
+            {
+                Vector3 pCenter = planetCentersLocal[j];
+                float pRadius = planetRadiiLocal[j];
+
+                // Projection of planet center onto local ray to vertex
+                float t = Vector3.Dot(pCenter - sunLocal, dir);
+
+                if (t > 0f && t < distToVertex)
+                {
+                    Vector3 closestPoint = sunLocal + dir * t;
+                    float dist = Vector3.Distance(pCenter, closestPoint);
+
+                    float rMin = pRadius;
+                    float rMax = pRadius + eclipsePenumbra;
+
+                    if (dist < rMin)
+                    {
+                        maxShadowFactor = 1f; // Full shadow (umbra)
+                        break;
+                    }
+                    else if (dist < rMax && eclipsePenumbra > 0.001f)
+                    {
+                        // Soft shadow blending (penumbra)
+                        float shadowFactor = 1f - ((dist - rMin) / eclipsePenumbra);
+                        if (shadowFactor > maxShadowFactor)
+                        {
+                            maxShadowFactor = shadowFactor;
+                        }
+                    }
+                }
+            }
+
+            Color targetColor = Color.Lerp(originalColors[i], originalColors[i] * shadowDarkness, maxShadowFactor);
+            
+            if (colors[i] != targetColor)
+            {
+                colors[i] = targetColor;
+                colorsModified = true;
+            }
+        }
+
+        if (colorsModified)
+        {
+            mesh.colors = colors;
+        }
+    }
+
     void Update()
     {
+        UpdateEclipseShadows();
+
         if (!Input.GetMouseButtonDown(0))
             return;
 
-        OrbitalCameraController orbital = Camera.main.transform.parent.GetComponent<OrbitalCameraController>();
+        if (Camera.main == null) return;
+        Transform parentTransform = Camera.main.transform.parent;
+        if (parentTransform == null) return;
+
+        OrbitalCameraController orbital = parentTransform.GetComponent<OrbitalCameraController>();
         if (orbital == null || !orbital.enabled) return;
 
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
@@ -300,5 +443,42 @@ public class LowPolyPlanet : MonoBehaviour
     {
         // return GetTerrainAtPoint(worldPoint) == TerrainType.Water;
         return false;
+    }
+
+    private int targetingCount = 0;
+    private RenderSelection selectionIndicator;
+
+    public void SetSelected(bool value)
+    {
+        EnsureSelectionIndicator();
+        selectionIndicator.SetSelected(value);
+    }
+
+    private void EnsureSelectionIndicator()
+    {
+        if (selectionIndicator == null)
+        {
+            selectionIndicator = GetComponent<RenderSelection>();
+            if (selectionIndicator == null)
+            {
+                selectionIndicator = gameObject.AddComponent<RenderSelection>();
+            }
+        }
+    }
+
+    public void SetTargeted(bool value)
+    {
+        EnsureSelectionIndicator();
+
+        targetingCount += value ? 1 : -1;
+        targetingCount = Mathf.Max(0, targetingCount);
+        
+        // If not explicitly selected, targeting enables the line but uses a different color logic
+        // Actually RenderSelection's SetSelected handles line enablement.
+        // We'll just let them overlap for now.
+        if (!selectionIndicator.enabled && targetingCount > 0)
+        {
+            selectionIndicator.SetSelected(true);
+        }
     }
 }

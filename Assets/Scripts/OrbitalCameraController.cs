@@ -13,10 +13,22 @@ public class OrbitalCameraController : MonoBehaviour
     Vector3 orbitDirection;
     Quaternion lastPlanetRotation;
 
+    void Start()
+    {
+        if (PlayerPrefs.HasKey("MouseSensitivity"))
+        {
+            rotationSpeed = 100f * (PlayerPrefs.GetFloat("MouseSensitivity") / 2f);
+        }
+    }
+
     void OnEnable()
     {
         if (target == null)
             return;
+
+        // Show cursor when orbiting a planet
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
 
         lastPlanetRotation = target.rotation;
 
@@ -33,10 +45,16 @@ public class OrbitalCameraController : MonoBehaviour
         }
     }
 
-    void Update()
+    void LateUpdate()
     {
         if (target == null)
             return;
+
+        // Parent to target's parent (the planet) for perfect sync
+        if (transform.parent != target.parent)
+        {
+            transform.SetParent(target.parent);
+        }
 
         Quaternion rotationDelta = target.rotation * Quaternion.Inverse(lastPlanetRotation);
         orbitDirection = rotationDelta * orbitDirection;
@@ -59,17 +77,22 @@ public class OrbitalCameraController : MonoBehaviour
         }
 
         Vector3 right = Vector3.Cross(orbitDirection, Vector3.up);
-        if (right.sqrMagnitude > 0.0001f)
+        if (right.sqrMagnitude < 0.0001f)
+        {
+            // At the poles, fall back to the camera's local right vector to prevent gimbal lock
+            right = transform.right;
+        }
+        else
         {
             right = right.normalized;
+        }
 
-            if (Mathf.Abs(v) > 0.0001f)
-            {
-                orbitDirection = Quaternion.AngleAxis(
-                    -v * rotationSpeed * Time.deltaTime,
-                    right
-                ) * orbitDirection;
-            }
+        if (Mathf.Abs(v) > 0.0001f)
+        {
+            orbitDirection = Quaternion.AngleAxis(
+                -v * rotationSpeed * Time.deltaTime,
+                right
+            ) * orbitDirection;
         }
 
         orbitDirection.Normalize();
@@ -77,11 +100,13 @@ public class OrbitalCameraController : MonoBehaviour
         distance -= Input.mouseScrollDelta.y * zoomSpeed;
         distance = Mathf.Max(minDistance, distance);
 
+        // Calculate position relative to parent
         transform.position = target.position + orbitDirection * distance;
         transform.LookAt(target.position);
 
         if (distance > atmosphereRadius)
         {
+            transform.SetParent(null); // Detach when leaving orbit
             enabled = false;
 
             if (simpleCameraController != null)
@@ -96,10 +121,9 @@ public class OrbitalCameraController : MonoBehaviour
 
                 simpleCameraController.enabled = true;
 
-                //Mouse turn off
+                // Lock cursor back when returning to free-look
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
-
             }
         }
     }
@@ -112,7 +136,7 @@ public class OrbitalCameraController : MonoBehaviour
         if (target == null)
             return;
 
-        //Mouse turn on
+        // Show cursor when orbiting
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
 

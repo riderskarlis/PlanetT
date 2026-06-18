@@ -8,14 +8,14 @@ public class SelectionSystem : MonoBehaviour
 
     const float DragThreshold = 6f;
 
-    readonly HashSet<SpaceshipController> selected = new HashSet<SpaceshipController>();
+    readonly HashSet<ISelectable> selected = new HashSet<ISelectable>();
 
     Vector2 dragStart;
     bool dragging;
     bool lassoActive;
     Texture2D whiteTex;
 
-    public IReadOnlyCollection<SpaceshipController> Selected => selected;
+    public IReadOnlyCollection<ISelectable> Selected => selected;
 
     void Awake()
     {
@@ -24,7 +24,6 @@ public class SelectionSystem : MonoBehaviour
 
     void Update()
     {
-
         HandleSelectionInput();
         HandleMoveInput();
     }
@@ -70,27 +69,38 @@ public class SelectionSystem : MonoBehaviour
 
     void HandleMoveInput()
     {
-        if (!Input.GetMouseButtonDown(1) || selected.Count == 0)
+        if (!Input.GetMouseButtonDown(1))
+            return;
+
+        // Collect all selected ships
+        List<SpaceshipController> selectedShips = new List<SpaceshipController>();
+        foreach (var s in selected)
+        {
+            if (s is SpaceshipController ship)
+                selectedShips.Add(ship);
+        }
+
+        if (selectedShips.Count == 0)
             return;
 
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
         if (!MovementTargeting.TryGetMoveTarget(ray, out Vector3 target, out LowPolyPlanet planet))
             return;
 
-        foreach (SpaceshipController ship in selected)
+        foreach (SpaceshipController ship in selectedShips)
             ship.SetMoveTarget(target, planet);
     }
 
     void ClickSelect(Vector2 screenPos, bool shift)
     {
-        SpaceshipController hitShip = RaycastShip(screenPos);
+        ISelectable hit = RaycastSelectable(screenPos);
 
-        if (hitShip != null)
+        if (hit != null)
         {
             if (shift)
-                ToggleShip(hitShip);
+                ToggleSelectable(hit);
             else
-                SetSingleSelection(hitShip);
+                SetSingleSelection(hit);
             return;
         }
 
@@ -104,66 +114,74 @@ public class SelectionSystem : MonoBehaviour
         if (!shift)
             ClearSelection();
 
+        // Check Ships
         foreach (SpaceshipController ship in SpaceshipController.All)
         {
-            Vector3 screen = Camera.main.WorldToScreenPoint(ship.transform.position);
-            if (screen.z < 0f)
-                continue;
-
-            if (!rect.Contains(new Vector2(screen.x, screen.y)))
-                continue;
-
-            if (shift)
+            if (IsInLasso(ship.transform.position, rect))
             {
-                if (!selected.Contains(ship))
-                    AddShip(ship);
+                if (shift) ToggleSelectable(ship);
+                else AddSelectable(ship);
             }
-            else
+        }
+
+        // Check Planets
+        LowPolyPlanet[] planets = Object.FindObjectsOfType<LowPolyPlanet>();
+        foreach (LowPolyPlanet planet in planets)
+        {
+            if (IsInLasso(planet.transform.position, rect))
             {
-                AddShip(ship);
+                if (shift) ToggleSelectable(planet);
+                else AddSelectable(planet);
             }
         }
     }
 
-    SpaceshipController RaycastShip(Vector2 screenPos)
+    bool IsInLasso(Vector3 worldPos, Rect rect)
+    {
+        Vector3 screen = Camera.main.WorldToScreenPoint(worldPos);
+        if (screen.z < 0f) return false;
+        return rect.Contains(new Vector2(screen.x, screen.y));
+    }
+
+    ISelectable RaycastSelectable(Vector2 screenPos)
     {
         Ray ray = Camera.main.ScreenPointToRay(screenPos);
         if (!Physics.Raycast(ray, out RaycastHit hit))
             return null;
 
-        return hit.collider.GetComponentInParent<SpaceshipController>();
+        return hit.collider.GetComponentInParent<ISelectable>();
     }
 
-    void SetSingleSelection(SpaceshipController ship)
+    void SetSingleSelection(ISelectable item)
     {
         ClearSelection();
-        AddShip(ship);
+        AddSelectable(item);
     }
 
-    void ToggleShip(SpaceshipController ship)
+    void ToggleSelectable(ISelectable item)
     {
-        if (selected.Contains(ship))
-            RemoveShip(ship);
+        if (selected.Contains(item))
+            RemoveSelectable(item);
         else
-            AddShip(ship);
+            AddSelectable(item);
     }
 
-    void AddShip(SpaceshipController ship)
+    void AddSelectable(ISelectable item)
     {
-        if (selected.Add(ship))
-            ship.SetSelected(true);
+        if (selected.Add(item))
+            item.SetSelected(true);
     }
 
-    void RemoveShip(SpaceshipController ship)
+    void RemoveSelectable(ISelectable item)
     {
-        if (selected.Remove(ship))
-            ship.SetSelected(false);
+        if (selected.Remove(item))
+            item.SetSelected(false);
     }
 
     public void ClearSelection()
     {
-        foreach (SpaceshipController ship in selected)
-            ship.SetSelected(false);
+        foreach (ISelectable item in selected)
+            item.SetSelected(false);
         selected.Clear();
     }
 
