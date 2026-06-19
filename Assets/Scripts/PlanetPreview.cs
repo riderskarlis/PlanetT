@@ -168,8 +168,8 @@ public class PlanetPreview : MonoBehaviour
             previewAnchor.Rotate(Vector3.up, rotationSpeed * Time.deltaTime, Space.Self);
         }
 
-        // Render target fallback copy if using standard Image component
-        if (activeClone != null && uiImage != null && renderTexture != null)
+        // Render target fallback copy if using standard Image component (only if RawImage is not used)
+        if (rawImage == null && activeClone != null && uiImage != null && renderTexture != null)
         {
             UpdateUIImageFallback();
         }
@@ -206,68 +206,19 @@ public class PlanetPreview : MonoBehaviour
 
         // Activate UI & Camera
         if (previewCamera != null) previewCamera.enabled = true;
-        if (rawImage != null) rawImage.gameObject.SetActive(true);
-        if (uiImage != null) uiImage.gameObject.SetActive(true);
-
-        // Instantiate clone inactive to avoid script initializations
-        bool originalActive = original.activeSelf;
-        if (originalActive) original.SetActive(false);
-        activeClone = Instantiate(original);
-        if (originalActive) original.SetActive(true);
-
-        activeClone.SetActive(false);
-        activeClone.name = original.name + "_Preview";
-        activeClone.transform.SetParent(previewAnchor, true);
-
-        // Ensure procedural meshes are copied over (e.g. from planet generation)
-        MeshFilter[] originalFilters = original.GetComponentsInChildren<MeshFilter>(true);
-        MeshFilter[] cloneFilters = activeClone.GetComponentsInChildren<MeshFilter>(true);
-        for (int i = 0; i < Mathf.Min(originalFilters.Length, cloneFilters.Length); i++)
+        if (rawImage != null)
         {
-            if (originalFilters[i] != null && cloneFilters[i] != null)
-            {
-                cloneFilters[i].sharedMesh = originalFilters[i].sharedMesh;
-            }
+            rawImage.gameObject.SetActive(true);
+            if (uiImage != null) uiImage.gameObject.SetActive(false);
+        }
+        else if (uiImage != null)
+        {
+            uiImage.gameObject.SetActive(true);
         }
 
-        // Clean up all non-rendering components to avoid logic duplicates
-        Component[] components = activeClone.GetComponentsInChildren<Component>(true);
-        
-        // Pass 1: Destroy custom MonoBehaviours first (to clear RequireComponent requirements on built-in components)
-        foreach (Component comp in components)
-        {
-            if (comp == null || comp is Transform)
-                continue;
-
-            if (comp is MonoBehaviour)
-            {
-                try
-                {
-                    DestroyImmediate(comp);
-                }
-                catch
-                {
-                    // Ignore transient dependency exceptions
-                }
-            }
-        }
-
-        // Pass 2: Destroy remaining non-rendering components (Colliders, LineRenderers, Rigidbodies, etc.)
-        components = activeClone.GetComponentsInChildren<Component>(true);
-        foreach (Component comp in components)
-        {
-            if (comp == null || comp is Transform || comp is MeshFilter || comp is MeshRenderer || comp is SkinnedMeshRenderer)
-                continue;
-
-            try
-            {
-                DestroyImmediate(comp);
-            }
-            catch
-            {
-                // Ignore transient dependency exceptions
-            }
-        }
+        // Create visual-only clone directly instead of instantiating and purging all behaviors
+        activeClone = CreateVisualClone(original);
+        activeClone.transform.SetParent(previewAnchor, false);
 
         // Setup layers if configured
         if (!string.IsNullOrEmpty(previewLayerName))
@@ -322,6 +273,69 @@ public class PlanetPreview : MonoBehaviour
         }
 
         SyncWireframeCamera();
+    }
+
+    private GameObject CreateVisualClone(GameObject original)
+    {
+        GameObject cloneRoot = new GameObject(original.name + "_Preview");
+        
+        cloneRoot.transform.localPosition = original.transform.localPosition;
+        cloneRoot.transform.localRotation = original.transform.localRotation;
+        cloneRoot.transform.localScale = original.transform.localScale;
+
+        CopyVisualsRecursively(original.transform, cloneRoot.transform);
+
+        return cloneRoot;
+    }
+
+    private void CopyVisualsRecursively(Transform source, Transform target)
+    {
+        // Copy MeshFilter / MeshRenderer if they exist
+        MeshFilter sourceFilter = source.GetComponent<MeshFilter>();
+        MeshRenderer sourceRenderer = source.GetComponent<MeshRenderer>();
+        if (sourceFilter != null && sourceRenderer != null)
+        {
+            MeshFilter targetFilter = target.gameObject.AddComponent<MeshFilter>();
+            targetFilter.sharedMesh = sourceFilter.sharedMesh;
+
+            MeshRenderer targetRenderer = target.gameObject.AddComponent<MeshRenderer>();
+            CopyRendererProperties(sourceRenderer, targetRenderer);
+        }
+
+        // Copy SkinnedMeshRenderer if it exists
+        SkinnedMeshRenderer sourceSkinned = source.GetComponent<SkinnedMeshRenderer>();
+        if (sourceSkinned != null)
+        {
+            SkinnedMeshRenderer targetSkinned = target.gameObject.AddComponent<SkinnedMeshRenderer>();
+            targetSkinned.sharedMesh = sourceSkinned.sharedMesh;
+            CopyRendererProperties(sourceSkinned, targetSkinned);
+        }
+
+        // Recursively process children skip helper components (Selection rings, lines)
+        foreach (Transform child in source)
+        {
+            if (child.name == "OrbitLine" || child.GetComponent<PlanetOrbit>() != null || child.name == "SelectionRing")
+            {
+                continue;
+            }
+
+            GameObject childClone = new GameObject(child.name);
+            childClone.transform.SetParent(target, false);
+            childClone.transform.localPosition = child.localPosition;
+            childClone.transform.localRotation = child.localRotation;
+            childClone.transform.localScale = child.localScale;
+
+            CopyVisualsRecursively(child, childClone.transform);
+        }
+    }
+
+    private void CopyRendererProperties(Renderer source, Renderer target)
+    {
+        target.sharedMaterials = source.sharedMaterials;
+        
+        MaterialPropertyBlock block = new MaterialPropertyBlock();
+        source.GetPropertyBlock(block);
+        target.SetPropertyBlock(block);
     }
 
     void UpdateUIImageFallback()

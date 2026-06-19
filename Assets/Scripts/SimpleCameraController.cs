@@ -37,7 +37,7 @@ public class SimpleCameraController : MonoBehaviour
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
 
-            if (Input.GetMouseButton(1))
+            if (Input.GetMouseButton(1) && !BlockLook)
             {
                 float mx = Input.GetAxis("Mouse X");
                 float my = Input.GetAxis("Mouse Y");

@@ -9,6 +9,11 @@ public class OrbitalCameraController : MonoBehaviour
     public float atmosphereRadius = 100f;
     public MonoBehaviour simpleCameraController;
 
+    [Header("Audio Settings")]
+    public AudioClip scrollTickSound;
+
+    private float lastScrollSoundTime = 0f;
+
     float distance;
     Vector3 orbitDirection;
     Quaternion lastPlanetRotation;
@@ -31,6 +36,8 @@ public class OrbitalCameraController : MonoBehaviour
         Cursor.visible = true;
 
         lastPlanetRotation = target.rotation;
+
+        UpdateMinDistance();
 
         Vector3 dir = transform.position - target.position;
         if (dir.sqrMagnitude > 0.0001f)
@@ -97,7 +104,16 @@ public class OrbitalCameraController : MonoBehaviour
 
         orbitDirection.Normalize();
 
-        distance -= Input.mouseScrollDelta.y * zoomSpeed;
+        // Exponential relative zoom: zoom speed scales with distance for smooth control near surface
+        if (Mathf.Abs(Input.mouseScrollDelta.y) > 0.001f)
+        {
+            float sensitivity = (zoomSpeed / 50f) * 0.1f;
+            float zoomFactor = 1f - Input.mouseScrollDelta.y * sensitivity;
+            zoomFactor = Mathf.Clamp(zoomFactor, 0.5f, 2.0f);
+            distance *= zoomFactor;
+
+            PlayScrollTickSound();
+        }
         distance = Mathf.Max(minDistance, distance);
 
         // Calculate position relative to parent
@@ -128,6 +144,23 @@ public class OrbitalCameraController : MonoBehaviour
         }
     }
 
+    private void UpdateMinDistance()
+    {
+        if (target != null)
+        {
+            LowPolyPlanet planet = target.GetComponent<LowPolyPlanet>();
+            if (planet != null)
+            {
+                // dynamically prevent clipping through peaks: terrain max height is radius + heightMultiplier
+                minDistance = planet.radius + planet.heightMultiplier + 5f;
+            }
+            else
+            {
+                minDistance = 10f;
+            }
+        }
+    }
+
     public void BeginOrbit(Transform newTarget, float newAtmosphereRadius)
     {
         target = newTarget;
@@ -139,6 +172,8 @@ public class OrbitalCameraController : MonoBehaviour
         // Show cursor when orbiting
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+
+        UpdateMinDistance();
 
         Vector3 dir = transform.position - target.position;
         if (dir.sqrMagnitude > 0.0001f)
@@ -156,5 +191,17 @@ public class OrbitalCameraController : MonoBehaviour
             simpleCameraController.enabled = false;
 
         enabled = true;
+    }
+
+    private void PlayScrollTickSound()
+    {
+        if (scrollTickSound != null && Time.unscaledTime - lastScrollSoundTime > 0.12f)
+        {
+            if (SoundManager.Instance != null)
+            {
+                SoundManager.Instance.PlaySFX(scrollTickSound);
+                lastScrollSoundTime = Time.unscaledTime;
+            }
+        }
     }
 }

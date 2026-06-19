@@ -16,6 +16,11 @@ public class PlanetManager : MonoBehaviour
     [Header("Planetary Material (Standard Vertex Color Shader)")]
     public Material planetMaterial;
 
+    [Header("Resource Prefabs")]
+    public GameObject clayPrefab;
+    public GameObject coalPrefab;
+    public GameObject ironPrefab;
+
     private static readonly string[] PlanetNames = {
         "Aurelia", "Xylos", "Zion", "Pandora", "Zephyr", "Vectera", "Kryx", "Akila", 
         "Solaria", "Triton", "Osiris", "Arrakis", "Caladan", "Naboo", "Tatooine", "Hoth", "Endor",
@@ -37,6 +42,13 @@ public class PlanetManager : MonoBehaviour
 
     void Start()
     {
+        // Initialize random seed from game setup screen
+        int seed = GameSetupData.GetParsedSeed();
+        Random.InitState(seed);
+
+        // Get planet count from setup
+        planetCount = GameSetupData.planetCount;
+
         // Find the Sun in the scene if not set
         if (sun == null)
         {
@@ -117,6 +129,64 @@ public class PlanetManager : MonoBehaviour
             orbit.sun = sun;
 
             planetObj.name = planet.planetName;
+
+            // Generate the mesh and collider now so raycasting works
+            planet.GeneratePlanet();
+
+            // Spawn Clay, Coal, and Iron resources
+            SpawnResourcesOnPlanet(planetObj, planet);
+        }
+    }
+
+    private void SpawnResourcesOnPlanet(GameObject planetObj, LowPolyPlanet planet)
+    {
+        // Spawn 1 to 7 nodes of each resource type on the planet surface
+        SpawnResourcePrefab(planetObj, planet, clayPrefab, "Clay", Random.Range(1, 8));
+        SpawnResourcePrefab(planetObj, planet, coalPrefab, "Coal", Random.Range(1, 8));
+        SpawnResourcePrefab(planetObj, planet, ironPrefab, "Iron", Random.Range(1, 8));
+    }
+
+    private void SpawnResourcePrefab(GameObject planetObj, LowPolyPlanet planet, GameObject prefab, string resourceName, int count)
+    {
+        if (prefab == null) return;
+
+        int spawnedCount = 0;
+        int attempts = 0;
+        
+        // Loop up to 150 times to give a bit more breathing room on mostly-water planets
+        while (spawnedCount < count && attempts < 150)
+        {
+            attempts++;
+            Vector3 randomDir = Random.onUnitSphere;
+            float maxRayDist = planet.radius * 4f;
+            Vector3 rayOrigin = planetObj.transform.position + randomDir * (planet.radius * 3f);
+            Ray ray = new Ray(rayOrigin, -randomDir);
+            
+            // Ignore trigger colliders (like atmosphere triggers or selection rings) when raycasting
+            if (Physics.Raycast(ray, out RaycastHit hit, maxRayDist, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                // Retrieve target planet component in parent (handles child mesh colliders if present)
+                LowPolyPlanet hitPlanet = hit.collider.GetComponent<LowPolyPlanet>();
+                if (hitPlanet == null)
+                {
+                    hitPlanet = hit.collider.GetComponentInParent<LowPolyPlanet>();
+                }
+
+                if (hitPlanet == planet)
+                {
+                    // Ensure the node spawns on land (not in the ocean)
+                    if (!planet.IsWater(hit.point))
+                    {
+                        GameObject resource = Instantiate(prefab, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal));
+                        
+                        // Attach as child so it moves with the planet
+                        resource.transform.SetParent(planetObj.transform);
+                        resource.name = resourceName;
+                        
+                        spawnedCount++;
+                    }
+                }
+            }
         }
     }
 

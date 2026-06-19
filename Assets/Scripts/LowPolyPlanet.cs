@@ -7,8 +7,11 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
     public string planetName = "Unknown Planet";
     [TextArea] public string planetDescription = "A mysterious celestial body.";
 
+    [Header("Ownership")]
+    public string owner = ""; // Empty/None for neutral, or owner name (e.g. player name)
+
     public string Name => planetName;
-    public string Description => planetDescription;
+    public string Description => $"Owner: {(string.IsNullOrEmpty(owner) ? "Neutral" : owner)}\n{planetDescription}";
 
     public float radius = 50f;
     public int subdivisions = 3;
@@ -80,10 +83,13 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
 
     void Start()
     {
-        GeneratePlanet();
+        if (mesh == null || vertices == null || vertices.Length == 0)
+        {
+            GeneratePlanet();
+        }
     }
     
-    void GeneratePlanet()
+    public void GeneratePlanet()
     {
         if (mesh == null)
             mesh = new Mesh();
@@ -400,17 +406,54 @@ public class LowPolyPlanet : MonoBehaviour, ISelectable
         }
     }
     
+    public Vector3[] Vertices => vertices;
+    public int[] Triangles => triangles;
+    public TerrainType[] TerrainTypes => terrainTypes;
+
+    public bool CanBuildAt(int triangleIndex)
+    {
+        if (triangles == null || terrainTypes == null || triangleIndex < 0 || (triangleIndex * 3 + 2) >= triangles.Length)
+            return false;
+
+        TerrainType type = terrainTypes[triangles[triangleIndex * 3]];
+        return type == TerrainType.Grass || type == TerrainType.Sand || type == TerrainType.Rock;
+    }
+
     public bool CanBuildAt(Vector3 worldPoint)
     {
-        // TerrainType type = GetTerrainAtPoint(worldPoint);
-        // return type == TerrainType.Grass || type == TerrainType.Sand || type == TerrainType.Rock;
-        return true;
+        if (vertices == null || vertices.Length == 0 || terrainTypes == null) return true;
+        Vector3 localPoint = transform.InverseTransformPoint(worldPoint);
+        float minDist = float.MaxValue;
+        int closestIndex = 0;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            float dist = Vector3.SqrMagnitude(vertices[i] - localPoint);
+            if (dist < minDist)
+            {
+                minDist = dist;
+                closestIndex = i;
+            }
+        }
+        TerrainType type = terrainTypes[closestIndex];
+        return type == TerrainType.Grass || type == TerrainType.Sand || type == TerrainType.Rock;
     }
     
     public bool IsWater(Vector3 worldPoint)
     {
-        // return GetTerrainAtPoint(worldPoint) == TerrainType.Water;
-        return false;
+        if (vertices == null || vertices.Length == 0 || terrainTypes == null) return false;
+        Vector3 localPoint = transform.InverseTransformPoint(worldPoint);
+        float minDist = float.MaxValue;
+        int closestIndex = 0;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            float dist = Vector3.SqrMagnitude(vertices[i] - localPoint);
+            if (dist < minDist)
+            {
+                minDist = dist;
+                closestIndex = i;
+            }
+        }
+        return terrainTypes[closestIndex] == TerrainType.Water;
     }
 
     private int targetingCount = 0;

@@ -6,6 +6,9 @@ TagManager:
   tags:
   - Atmosphere
   - Planet
+  - Clay
+  - Iron
+  - Coal
   layers:
   - Default
   - TransparentFX

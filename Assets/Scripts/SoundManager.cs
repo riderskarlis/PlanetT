@@ -18,6 +18,10 @@ public class SoundManager : MonoBehaviour
     [SerializeField] private int sfxPoolSize = 10;
     [SerializeField] private int uiPoolSize = 5;
 
+    [Header("UI Audio Clips")]
+    [SerializeField] private AudioClip buttonClickClip;
+    [SerializeField] private AudioClip buttonHoverClip;
+
     // Dedicated channels
     private AudioSource musicSourceA;
     private AudioSource musicSourceB;
@@ -157,12 +161,31 @@ public class SoundManager : MonoBehaviour
         }
     }
 
-    public void PlayMusic(AudioClip clip, float fadeDuration = 1.0f)
+    public bool IsMusicPlaying
+    {
+        get
+        {
+            if (isMusicSourceAActive)
+                return musicSourceA != null && musicSourceA.isPlaying;
+            else
+                return musicSourceB != null && musicSourceB.isPlaying;
+        }
+    }
+
+    public void PlayMusic(AudioClip clip, float fadeDuration = 1.0f, bool loop = true)
     {
         if (crossfadeCoroutine != null)
             StopCoroutine(crossfadeCoroutine);
 
-        crossfadeCoroutine = StartCoroutine(CrossfadeMusic(clip, fadeDuration));
+        crossfadeCoroutine = StartCoroutine(CrossfadeMusic(clip, fadeDuration, loop));
+    }
+
+    public void StopMusic(float fadeDuration = 1.0f)
+    {
+        if (crossfadeCoroutine != null)
+            StopCoroutine(crossfadeCoroutine);
+
+        crossfadeCoroutine = StartCoroutine(CrossfadeMusic(null, fadeDuration, false));
     }
 
     private AudioSource GetAvailableSource(List<AudioSource> pool, float currentVolume)
@@ -180,15 +203,20 @@ public class SoundManager : MonoBehaviour
         return null;
     }
 
-    private IEnumerator CrossfadeMusic(AudioClip nextClip, float duration)
+    private IEnumerator CrossfadeMusic(AudioClip nextClip, float duration, bool loop)
     {
         float targetMusicVolume = musicVolume * masterVolume;
         AudioSource activeSource = isMusicSourceAActive ? musicSourceA : musicSourceB;
         AudioSource transitionSource = isMusicSourceAActive ? musicSourceB : musicSourceA;
 
         isMusicSourceAActive = !isMusicSourceAActive;
-        transitionSource.clip = nextClip;
-        transitionSource.Play();
+        
+        if (nextClip != null)
+        {
+            transitionSource.clip = nextClip;
+            transitionSource.loop = loop;
+            transitionSource.Play();
+        }
         transitionSource.volume = 0f;
 
         float elapsed = 0f;
@@ -200,13 +228,96 @@ public class SoundManager : MonoBehaviour
             float percent = elapsed / duration;
 
             activeSource.volume = Mathf.Lerp(startActiveVol, 0f, percent);
-            transitionSource.volume = Mathf.Lerp(0f, targetMusicVolume, percent);
+            if (nextClip != null)
+            {
+                transitionSource.volume = Mathf.Lerp(0f, targetMusicVolume, percent);
+            }
 
             yield return null;
         }
 
         activeSource.volume = 0f;
         activeSource.Stop();
-        transitionSource.volume = targetMusicVolume;
+        if (nextClip != null)
+        {
+            transitionSource.volume = targetMusicVolume;
+        }
+    }
+
+    private void OnEnable()
+    {
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    private void OnDisable()
+    {
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    private void Start()
+    {
+        AutoBindUIButtons();
+    }
+
+    private void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
+    {
+        AutoBindUIButtons();
+    }
+
+    public void AutoBindUIButtons()
+    {
+        UnityEngine.UI.Button[] buttons = Resources.FindObjectsOfTypeAll<UnityEngine.UI.Button>();
+        foreach (var btn in buttons)
+        {
+            UIEventSoundBinder binder = btn.gameObject.GetComponent<UIEventSoundBinder>();
+            if (binder == null)
+            {
+                binder = btn.gameObject.AddComponent<UIEventSoundBinder>();
+                binder.Bind(btn, this);
+            }
+        }
+    }
+
+    public void PlayButtonClick()
+    {
+        if (buttonClickClip != null)
+        {
+            PlayUI(buttonClickClip);
+        }
+    }
+
+    public void PlayButtonHover()
+    {
+        if (buttonHoverClip != null)
+        {
+            PlayUI(buttonHoverClip);
+        }
+    }
+}
+
+public class UIEventSoundBinder : MonoBehaviour, UnityEngine.EventSystems.IPointerEnterHandler
+{
+    private SoundManager manager;
+
+    public void Bind(UnityEngine.UI.Button button, SoundManager soundManager)
+    {
+        manager = soundManager;
+        button.onClick.AddListener(OnButtonClick);
+    }
+
+    public void OnPointerEnter(UnityEngine.EventSystems.PointerEventData eventData)
+    {
+        if (manager != null)
+        {
+            manager.PlayButtonHover();
+        }
+    }
+
+    private void OnButtonClick()
+    {
+        if (manager != null)
+        {
+            manager.PlayButtonClick();
+        }
     }
 }

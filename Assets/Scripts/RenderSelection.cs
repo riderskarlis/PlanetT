@@ -24,7 +24,10 @@ public class RenderSelection : MonoBehaviour
         line.useWorldSpace = true;
         line.loop = true;
         line.material = new Material(Shader.Find("Sprites/Default"));
-        line.enabled = false;
+        
+        // Permanent selection halo around spaceship: enable line renderer immediately
+        line.enabled = (GetComponent<SpaceshipController>() != null);
+
         ApplyColor();
     }
 
@@ -72,9 +75,64 @@ public class RenderSelection : MonoBehaviour
         return dx * dx + dz * dz <= radius * radius;
     }
 
+    Color GetPlayerColor()
+    {
+        int index = GameSetupData.colorIndex;
+        Color[] colors = new Color[]
+        {
+            new Color(1f, 0f, 0f),       // Red
+            new Color(1f, 0.5f, 0f),     // Orange
+            new Color(1f, 1f, 0f),       // Yellow
+            new Color(0f, 1f, 0f),       // Green
+            new Color(0f, 0f, 1f),       // Blue
+            new Color(0.29f, 0f, 0.51f), // Indigo
+            new Color(0.5f, 0f, 0.5f)    // Violet
+        };
+        if (index >= 0 && index < colors.Length)
+        {
+            return colors[index];
+        }
+        return new Color(0.2f, 0.9f, 1f); // Default cyan
+    }
+
+    void UpdateDynamicColor()
+    {
+        LowPolyPlanet planet = GetComponent<LowPolyPlanet>();
+        if (planet != null)
+        {
+            if (string.IsNullOrEmpty(planet.owner))
+            {
+                // Unowned planets get white selection
+                selectedColor = Color.white;
+            }
+            else
+            {
+                // Owned planets get the color of player owner
+                selectedColor = GetPlayerColor();
+            }
+        }
+        else
+        {
+            // Check if spaceship is an enemy
+            SpaceshipController ship = GetComponent<SpaceshipController>();
+            if (ship != null && ship.isEnemy)
+            {
+                selectedColor = Color.blue; // Enemies get blue halos
+            }
+            else
+            {
+                selectedColor = GetPlayerColor();
+            }
+        }
+    }
+
     void ApplyColor()
     {
-        Color c = selected ? selectedColor : color;
+        UpdateDynamicColor();
+
+        // Spaceships show their selection halo permanently using selectedColor
+        bool showAsSelected = selected || (GetComponent<SpaceshipController>() != null);
+        Color c = showAsSelected ? selectedColor : color;
         if (hovered == this)
             c = hoverColor;
 
@@ -84,9 +142,14 @@ public class RenderSelection : MonoBehaviour
 
     public void SetSelected(bool value)
     {
+        if (this == null || line == null) return;
+
         selected = value;
-        line.enabled = selected;
-        if (selected)
+        
+        // Line stays active if spaceship (permanent halo), otherwise toggled by selection
+        line.enabled = selected || (GetComponent<SpaceshipController>() != null);
+        
+        if (line.enabled)
             RefreshCircle();
         ApplyColor();
     }
