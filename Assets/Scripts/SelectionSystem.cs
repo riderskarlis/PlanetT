@@ -710,7 +710,6 @@ public class SelectionSystem : MonoBehaviour
                         
                         ship.SetMoveTarget(targetPos, targetPlanet, Vector3.zero);
                     }
-                    Debug.Log($"[SelectionSystem] Ordered {selectedShips.Count} ships to custom drawn formation shape.");
                 }
                 else
                 {
